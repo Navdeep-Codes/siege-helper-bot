@@ -410,7 +410,7 @@ app.event('message', async ({ event, client, logger }) => {
     await client.chat.postMessage({
         channel: event.channel,
         thread_ts: event.ts,
-        text: `:hii: Thank you for creating a ticket someone will help you soon. make sure to read the <https://hackclub.slack.com/docs/T0266FRGM/F08NW544FMM|Faq>`
+        text: `:hii: Thank you for creating a ticket someone will help you soon. make sure to read the <https://hackclub.slack.com/docs/T0266FRGM/F099PKQR3UK|Faq>`
     });
     // react to the message with a thinking face
     client.reactions.add({
