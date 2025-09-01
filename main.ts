@@ -411,7 +411,14 @@ app.event('message', async ({ event, client, logger }) => {
         channel: event.channel,
         thread_ts: event.ts,
         text: `:hii: Thank you for creating a ticket someone will help you soon. make sure to read the <https://hackclub.slack.com/docs/T0266FRGM/F08NW544FMM|Faq>`
-    })
+    });
+    // react to the message with a thinking face
+    client.reactions.add({
+        name: "thinking_face",
+        timestamp: event.ts,
+        channel: event.channel,
+    });
+
 });
 
 // Listen for thread replies in the help channel to handle claims
@@ -594,6 +601,11 @@ app.event('reaction_added', async ({ event, client, logger }) => {
                     logger.info(`Ticket resolved via reaction by ${reactionEvent.user} (${isOriginalAuthor ? 'original author' : 'support team member'})`);
                     client.reactions.add({
                         name: "white_check_mark",
+                        timestamp: reactionEvent.item.ts,
+                        channel: reactionEvent.item.channel,
+                    });
+                    client.reactions.remove({
+                        name: "thinking_face",
                         timestamp: reactionEvent.item.ts,
                         channel: reactionEvent.item.channel,
                     });
