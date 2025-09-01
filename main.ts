@@ -192,7 +192,7 @@ function createTicketBlocks(AIQuickResponse: string, originalMessageChannelID: s
 async function refreshTicketChannelMembers(client) {
     try {
         const result = await client.conversations.members({
-            channel: TICKETS_CHANNEL
+            channel: CREW_CHANNEL
         });
 
         if (result.ok && result.members) {
