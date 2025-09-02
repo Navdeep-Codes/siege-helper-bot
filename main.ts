@@ -3,6 +3,7 @@ import { App, LogLevel } from '@slack/bolt';
 import * as dotenv from 'dotenv';
 import * as fs from 'fs-extra';
 import * as path from 'path';
+import { MongoClient } from 'mongodb';
 dotenv.config();
 const faqData = fs.readFileSync("lib/faq.md").toString()
 const detailsData = fs.readFileSync("lib/details.md").toString() // Added details.md
@@ -41,48 +42,72 @@ const ticketsByOriginalTs: Record<string, string> = {};
 
 // evan this concerns me, why are we saving data in json :heavysob:
 let lbForToday: LBEntry[] = []
-// Function to save ticket data to a file
+
+const MONGO_URI = process.env.MONGO_URI!;
+const MONGO_DB = process.env.MONGO_DB || 'siege_helper';
+const MONGO_COLLECTION = process.env.MONGO_COLLECTION || 'tickets';
+
+let mongoClient: MongoClient;
+let ticketsCollection: any;
+
+async function connectMongo() {
+    mongoClient = new MongoClient(MONGO_URI);
+    await mongoClient.connect();
+    const db = mongoClient.db(MONGO_DB);
+    ticketsCollection = db.collection(MONGO_COLLECTION);
+}
+
+// Replace saveTicketData with MongoDB upsert
 async function saveTicketData() {
     try {
-        const data = {
-            tickets,
-            ticketsByOriginalTs,
-            lbForToday
-        };
-        await fs.writeJSON(DATA_FILE_PATH, data, { spaces: 2 });
-        console.log('Ticket data saved to file');
+        // Save all tickets
+        for (const [ticketTs, ticket] of Object.entries(tickets)) {
+            await ticketsCollection.updateOne(
+                { ticketMessageTs: ticketTs },
+                { $set: ticket },
+                { upsert: true }
+            );
+        }
+        // Save ticketsByOriginalTs mapping
+        await ticketsCollection.updateOne(
+            { _id: 'ticketsByOriginalTs' },
+            { $set: { mapping: ticketsByOriginalTs } },
+            { upsert: true }
+        );
+        // Save lbForToday
+        await ticketsCollection.updateOne(
+            { _id: 'lbForToday' },
+            { $set: { lb: lbForToday } },
+            { upsert: true }
+        );
+        console.log('Ticket data saved to MongoDB');
     } catch (error) {
-        console.error('Error saving ticket data to file:', error);
+        console.error('Error saving ticket data to MongoDB:', error);
     }
 }
 
-// Function to load ticket data from a file
+// Replace loadTicketData with MongoDB fetch
 async function loadTicketData() {
     try {
-        if (await fs.pathExists(DATA_FILE_PATH)) {
-            const data = await fs.readJSON(DATA_FILE_PATH);
+        const allTickets = await ticketsCollection.find({ ticketMessageTs: { $exists: true } }).toArray();
+        Object.keys(tickets).forEach(key => delete tickets[key]);
+        allTickets.forEach(ticket => {
+            tickets[ticket.ticketMessageTs] = ticket;
+        });
 
-            // Clear existing data first
-            Object.keys(tickets).forEach(key => delete tickets[key]);
-            Object.keys(ticketsByOriginalTs).forEach(key => delete ticketsByOriginalTs[key]);
-            lbForToday = []
-            // Load data from file
-            if (data.tickets) {
-                Object.assign(tickets, data.tickets);
-            }
-            if (data.ticketsByOriginalTs) {
-                Object.assign(ticketsByOriginalTs, data.ticketsByOriginalTs);
-            }
-            if (data.lbForToday) {
-                lbForToday = data.lbForToday
-            }
-
-            console.log(`Loaded ${Object.keys(tickets).length} tickets from file`);
-            return true;
+        const mappingDoc = await ticketsCollection.findOne({ _id: 'ticketsByOriginalTs' });
+        Object.keys(ticketsByOriginalTs).forEach(key => delete ticketsByOriginalTs[key]);
+        if (mappingDoc && mappingDoc.mapping) {
+            Object.assign(ticketsByOriginalTs, mappingDoc.mapping);
         }
-        return false;
+
+        const lbDoc = await ticketsCollection.findOne({ _id: 'lbForToday' });
+        lbForToday = lbDoc && lbDoc.lb ? lbDoc.lb : [];
+
+        console.log(`Loaded ${Object.keys(tickets).length} tickets from MongoDB`);
+        return true;
     } catch (error) {
-        console.error('Error loading ticket data from file:', error);
+        console.error('Error loading ticket data from MongoDB:', error);
         return false;
     }
 }
@@ -650,7 +675,7 @@ async function sendLB() {
 
 // Start the app
 (async () => {
-    // Load ticket data from file before starting the app
+    await connectMongo(); // Connect to MongoDB first
     await loadTicketData();
 
     await app.start();
