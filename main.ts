@@ -385,7 +385,7 @@ async function resolveTicket(ticketTs: string, resolver: string, client, logger)
                 await client.chat.postMessage({
                     channel: ticket.originalChannel,
                     thread_ts: ticket.originalTs,
-                    text: `This ticket has been marked as resolved. Please send a new message in <#${HELP_CHANNEL}> to create a new ticket. (new ticket = faster response)`
+                    text: `Ticket Marked as Resolved! :yay: \n Please send a new message in <#${HELP_CHANNEL}> to create a new ticket and someone'll be happy to help you out! (new ticket = faster response)`
                 });
             }
         } catch (error) {
@@ -429,21 +429,38 @@ app.event('message', async ({ event, client, logger }) => {
     if (event.channel !== HELP_CHANNEL || (event as any).thread_ts) return;
     if ((event as any).subtype) return; // Skip edited messages, etc.
 
-    const message = event as { text: string; ts: string; channel: string; user: string };
+    // Detect if the message contains an image
+    const hasImage = Array.isArray((event as any).files) &&
+        (event as any).files.some((file: any) => file.mimetype && file.mimetype.startsWith('image/'));
+
+    // Only create a ticket if there is text or an image
+    if (
+        (!('text' in event) || !event.text) &&
+        !hasImage
+    ) return;
+
+    const message = {
+        text: (typeof (event as any).text === 'string' ? (event as any).text : (hasImage ? '[Image attached]' : '')),
+        ts: event.ts,
+        channel: event.channel,
+        user: typeof (event as any).user === 'string' ? (event as any).user : undefined
+    };
+
     await createTicket(message, client, logger);
+
     // send welcome message
     await client.chat.postMessage({
         channel: event.channel,
         thread_ts: event.ts,
         text: `:hii: Thank you for creating a ticket someone will help you soon. make sure to read the <https://hackclub.slack.com/docs/T0266FRGM/F099PKQR3UK|Faq>`
     });
+
     // react to the message with a thinking face
     client.reactions.add({
         name: "thinking_face",
         timestamp: event.ts,
         channel: event.channel,
     });
-
 });
 
 // Listen for thread replies in the help channel to handle claims
@@ -666,7 +683,7 @@ async function fetchAIResponse(userInput) {
 }
 async function sendLB() {
     app.client.chat.postMessage({
-        channel: CREW_CHANNEL,
+        channel: CREW_CHANNEL || '',
         text: `Todays top 10 for ticket closes:\n${lbForToday.sort((a, b) => b.count_of_tickets - a.count_of_tickets).map((e, i) => `${i + 1} - <@${e.slack_id}> resolved *${e.count_of_tickets}* today!\n`)}`
     })
     lbForToday = []
